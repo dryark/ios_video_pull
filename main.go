@@ -5,12 +5,14 @@ import (
     "fmt"
     "os"
     "os/signal"
+    //strconv"
     "time"
 
     //"github.com/nanoscopic/ios_video_stream/screencapture"
     "github.com/danielpaulus/quicktime_video_hack/screencapture"
     //cm "github.com/danielpaulus/quicktime_video_hack/screencapture/coremedia"
     //cm "github.com/nanoscopic/ios_video_stream/screencapture/coremedia"
+    "github.com/google/gousb"
     
     "go.nanomsg.org/mangos/v3"
 	  "go.nanomsg.org/mangos/v3/protocol/push"
@@ -45,12 +47,47 @@ func main() {
 }
 
 func devices() {
-    deviceList, err := screencapture.FindIosDevices()
+    ctx := gousb.NewContext()
+    
+    devs, err := findIosDevices(ctx)
     if err != nil { log.Errorf("Error finding iOS Devices - %s",err) }
     
-    for _,device := range deviceList {
-        fmt.Printf( "UDID:%s, Name:%s, VID=%s, PID=%s\n", device.SerialNumber, device.ProductName, device.VID, device.PID )
+    for _,dev := range devs {
+        serial, _ := dev.SerialNumber()
+        product, _ := dev.Product()
+        subcs := getVendorSubclasses( dev.Desc )
+        activated := 0
+        for _,subc := range subcs {
+            if int(subc)==42 { activated=1 }
+        }
+        //fmt.Printf( "UDID:%s, Name:%s, VID=%s, PID=%s, Ifaces=%s\n", device.SerialNumber, device.ProductName, device.VID, device.PID, ifaces )
+        fmt.Printf( "Bus: %d, Address: %d, Port: %d, UDID:%s, Name:%s, VID=%s, PID=%s, Activated=%d\n", dev.Desc.Bus, dev.Desc.Address, dev.Desc.Port, serial, product, dev.Desc.Vendor, dev.Desc.Product, activated )
+        dev.Close()
     }
+    
+    ctx.Close()
+}
+
+func findIosDevices( ctx *gousb.Context ) ( [] *gousb.Device, error ) {
+  return ctx.OpenDevices( func(dev *gousb.DeviceDesc) bool {
+		for _, subc := range getVendorSubclasses( dev ) {
+		  if subc == gousb.ClassApplication { return true }
+		}
+		return false
+	} )
+}
+
+func getVendorSubclasses(desc *gousb.DeviceDesc) ([]gousb.Class) {
+	subClasses := []gousb.Class{}
+	for _, conf := range desc.Configs {
+	  for _, iface := range conf.Interfaces {
+	    if iface.AltSettings[0].Class == gousb.ClassVendorSpec {
+        subClass := iface.AltSettings[0].SubClass
+        subClasses = append( subClasses, subClass )
+      }
+    }
+	}
+	return subClasses
 }
 
 func gopull( pushSpec string, udid string ) {
@@ -117,6 +154,8 @@ func startWithConsumer( consumer screencapture.CmSampleBufConsumer, udid string,
     err = adapter.StartReading( device, &mp, stopChannel2 )
     
     if err != nil { log.Errorf("failed connecting to usb - %s",err); return false }
+    
+    device.Close()
     
     return true
 }
