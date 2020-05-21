@@ -3,7 +3,8 @@ package main
 import (
     "bytes"
     "encoding/binary"
-    //"fmt"
+    "io"
+    "fmt"
     "strconv"
     "time"
     cm "github.com/danielpaulus/quicktime_video_hack/screencapture/coremedia"
@@ -17,13 +18,17 @@ var startCode = []byte{00, 00, 00, 01}
 
 //ZMQWriter writes nalus into a file using 0x00000001 as a separator (h264 ANNEX B) and raw pcm audio into a wav file
 type NanoWriter struct {
-    socket       mangos.Socket
-    buffer       bytes.Buffer
-    outFilePath  string
+    socket mangos.Socket
+    buffer bytes.Buffer
+    fh     io.Writer
 }
 
 func NewNanoWriter( socket mangos.Socket ) NanoWriter {
     return NanoWriter{ socket: socket }
+}
+
+func NewFileWriter( fh io.Writer ) NanoWriter {
+    return NanoWriter{ fh: fh }
 }
 
 //Consume writes PPS and SPS as well as sample bufs into a annex b .h264 file and audio samples into a wav file
@@ -82,9 +87,12 @@ func (self NanoWriter) writeNalu(naluBytes []byte) error {
     if err != nil {
         return err
     }
-    //fmt.Printf(now + "\n")
     
-    self.socket.Send( self.buffer.Bytes() )
+    if self.fh == nil {
+        self.socket.Send( self.buffer.Bytes() )
+    } else {
+        self.fh.Write( self.buffer.Bytes() )
+    }
     self.buffer.Reset()
     return nil
 }

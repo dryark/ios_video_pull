@@ -1,6 +1,7 @@
 package main
 
 import (
+    "bufio"
     "errors"
     "flag"
     "fmt"
@@ -24,6 +25,7 @@ func main() {
     var devicesCmd = flag.Bool(   "devices"  , false                 , "List devices then exit" )
     var pullCmd    = flag.Bool(   "pull"   , false                   , "Pull video" )
     var pushSpec   = flag.String( "pushSpec" , "tcp://127.0.0.1:7878", "NanoMsg spec to push h264 nalus to" )
+    var file       = flag.String( "file", ""                         , "File to save h264 nalus into" )
     var verbose    = flag.Bool(   "v"        , false                 , "Verbose Debugging" )
     var enableCmd  = flag.Bool( "enable", false, "Enable device" )
     var disableCmd = flag.Bool( "disable", false, "Disable device" )
@@ -39,7 +41,7 @@ func main() {
     if *devicesCmd {
         devices(); return
     } else if *pullCmd {
-        gopull( *pushSpec, *udid )
+        gopull( *pushSpec, *file, *udid )
     } else if *enableCmd {
         enable( *udid )
     } else if *disableCmd {
@@ -112,15 +114,25 @@ func getVendorSubclasses( desc *gousb.DeviceDesc ) ([]gousb.Class) {
     return subClasses
 }
 
-func gopull( pushSpec string, udid string ) {
-    pushSock := setup_nanomsg_sockets( pushSpec )    
-    
+func gopull( pushSpec string, filename string, udid string ) {
     stopChannel := make( chan interface {} )
     stopChannel2 := make( chan interface {} )
     stopChannel3 := make( chan bool )
     waitForSigInt( stopChannel, stopChannel2, stopChannel3 )
     
-    writer := NewNanoWriter( pushSock )
+    var fh *os.File
+    var err error
+    var writer screencapture.CmSampleBufConsumer
+    if filename == "" {
+        pushSock := setup_nanomsg_sockets( pushSpec )
+        writer = NewNanoWriter( pushSock )
+    } else {
+        fh, err = os.Create( filename )
+        if err != nil {
+            log.Errorf("Error creating file %s:%s", filename, err)
+        }
+        writer = NewFileWriter( bufio.NewWriter( fh ) )
+    }
     
     attempt := 1
     for {
