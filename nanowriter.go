@@ -4,7 +4,7 @@ import (
     "bytes"
     "encoding/binary"
     "io"
-    "fmt"
+    //"fmt"
     "strconv"
     "time"
     cm "github.com/danielpaulus/quicktime_video_hack/screencapture/coremedia"
