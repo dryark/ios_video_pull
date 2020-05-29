@@ -7,6 +7,7 @@ import (
     "fmt"
     "os"
     "os/signal"
+    "strings"
     "time"
 
     "github.com/danielpaulus/quicktime_video_hack/screencapture"
@@ -23,6 +24,7 @@ import (
 func main() {
     var udid       = flag.String( "udid"     , ""                    , "Device UDID" )
     var devicesCmd = flag.Bool(   "devices"  , false                 , "List devices then exit" )
+    var jsonFlag   = flag.Bool(   "json"     , false                 , "Use JSON output when listing devices" )
     var pullCmd    = flag.Bool(   "pull"   , false                   , "Pull video" )
     var pushSpec   = flag.String( "pushSpec" , "tcp://127.0.0.1:7878", "NanoMsg spec to push h264 nalus to" )
     var file       = flag.String( "file", ""                         , "File to save h264 nalus into" )
@@ -39,7 +41,7 @@ func main() {
     }
 
     if *devicesCmd {
-        devices(); return
+        devices( *jsonFlag, *udid ); return
     } else if *pullCmd {
         gopull( *pushSpec, *file, *udid )
     } else if *enableCmd {
@@ -51,23 +53,34 @@ func main() {
     }
 }
 
-func devices() {
+func devices( useJson bool, udid string ) {
     ctx := gousb.NewContext()
     
     devs, err := findIosDevices(ctx)
     if err != nil { log.Errorf("Error finding iOS Devices - %s",err) }
     
+    if useJson && udid == "" { fmt.Printf("[\n") }
     for _,dev := range devs {
         serial, _ := dev.SerialNumber()
+        if udid != "" && serial != udid { continue }
         product, _ := dev.Product()
         subcs := getVendorSubclasses( dev.Desc )
         activated := 0
         for _,subc := range subcs {
             if int(subc)==42 { activated=1 }
         }
-        fmt.Printf( "Bus: %d, Address: %d, Port: %d, UDID:%s, Name:%s, VID=%s, PID=%s, Activated=%d\n", dev.Desc.Bus, dev.Desc.Address, dev.Desc.Port, serial, product, dev.Desc.Vendor, dev.Desc.Product, activated )
+        if useJson {
+            name := strings.Replace( product, `"`,`\"`, -1 )
+            fmt.Printf(`{"bus":%d,"addr":%d,"port":%d,"udid":"%s","name":"%s","vid":"%s","pid":"%s","activated":%d}`,
+                dev.Desc.Bus, dev.Desc.Address, dev.Desc.Port, serial, name, dev.Desc.Vendor, dev.Desc.Product, activated )
+            if udid == "" { fmt.Printf(",") }
+            fmt.Printf("\n")
+        } else {
+            fmt.Printf( "Bus: %d, Address: %d, Port: %d, UDID:%s, Name:%s, VID=%s, PID=%s, Activated=%d\n", dev.Desc.Bus, dev.Desc.Address, dev.Desc.Port, serial, product, dev.Desc.Vendor, dev.Desc.Product, activated )
+        }
         dev.Close()
     }
+    if useJson && udid == "" { fmt.Printf("]\n") }
     
     ctx.Close()
 }
@@ -271,7 +284,8 @@ func disable( udid string ) {
         return
     }
     
-    sendQTDisable( usbDevice )
+    usbDevice.Reset()
+    //sendQTDisable( usbDevice )
     
     usbDevice.Close()
     ctx.Close()
