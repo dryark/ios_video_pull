@@ -7,6 +7,7 @@ import (
     "fmt"
     "os"
     "os/signal"
+    "strconv"
     "strings"
     "time"
 
@@ -24,6 +25,7 @@ import (
 func main() {
     var udid       = flag.String( "udid"     , ""                    , "Device UDID" )
     var devicesCmd = flag.Bool(   "devices"  , false                 , "List devices then exit" )
+    var decimalFlag= flag.Bool(   "decimal"  , false                 , "Show product ID / vendor ID in decimal" )
     var jsonFlag   = flag.Bool(   "json"     , false                 , "Use JSON output when listing devices" )
     var pullCmd    = flag.Bool(   "pull"   , false                   , "Pull video" )
     var pushSpec   = flag.String( "pushSpec" , "tcp://127.0.0.1:7878", "NanoMsg spec to push h264 nalus to" )
@@ -41,7 +43,7 @@ func main() {
     }
 
     if *devicesCmd {
-        devices( *jsonFlag, *udid ); return
+        devices( *jsonFlag, *udid, *decimalFlag ); return
     } else if *pullCmd {
         gopull( *pushSpec, *file, *udid )
     } else if *enableCmd {
@@ -53,7 +55,7 @@ func main() {
     }
 }
 
-func devices( useJson bool, udid string ) {
+func devices( useJson bool, udid string, useDecimal bool ) {
     ctx := gousb.NewContext()
     
     devs, err := findIosDevices(ctx)
@@ -69,14 +71,27 @@ func devices( useJson bool, udid string ) {
         for _,subc := range subcs {
             if int(subc)==42 { activated=1 }
         }
+        pidHex := dev.Desc.Product.String()
+        vidHex := dev.Desc.Vendor.String()
+        pid := ""
+        vid := ""
+        if useDecimal {
+            pid64, _ := strconv.ParseInt( pidHex, 16, 16 )
+            vid64, _ := strconv.ParseInt( vidHex, 16, 16 )
+            pid = strconv.Itoa( int( pid64 ) )
+            vid = strconv.Itoa( int( vid64 ) )
+        } else {
+            pid = pidHex
+            vid = vidHex
+        }
         if useJson {
             name := strings.Replace( product, `"`,`\"`, -1 )
             fmt.Printf(`{"bus":%d,"addr":%d,"port":%d,"udid":"%s","name":"%s","vid":"%s","pid":"%s","activated":%d}`,
-                dev.Desc.Bus, dev.Desc.Address, dev.Desc.Port, serial, name, dev.Desc.Vendor, dev.Desc.Product, activated )
+                dev.Desc.Bus, dev.Desc.Address, dev.Desc.Port, serial, name, vid, pid, activated )
             if udid == "" { fmt.Printf(",") }
             fmt.Printf("\n")
         } else {
-            fmt.Printf( "Bus: %d, Address: %d, Port: %d, UDID:%s, Name:%s, VID=%s, PID=%s, Activated=%d\n", dev.Desc.Bus, dev.Desc.Address, dev.Desc.Port, serial, product, dev.Desc.Vendor, dev.Desc.Product, activated )
+            fmt.Printf( "Bus: %d, Address: %d, Port: %d, UDID:%s, Name:%s, VID=%s, PID=%s, Activated=%d\n", dev.Desc.Bus, dev.Desc.Address, dev.Desc.Port, serial, product, vid, pid, activated )
         }
         dev.Close()
     }
@@ -425,7 +440,7 @@ func startReading(usa *UsbAdapter, usbDevice *gousb.Device, receiver screencaptu
     log.Debugf("Clear Feature RC: %d", val)*/
 
     success, iface := findInterfaceForSubclass( config, 0x2a )
-    if !success { log.Debug("could not get Quicktime Interface"); return err }
+    if !success || iface == nil { log.Debug("could not get Quicktime Interface"); return err }
     log.Debugf("Got QT iface:%s", iface.String())
 
     inboundBulkEndpointIndex, err := grabInBulk(iface.Setting)
